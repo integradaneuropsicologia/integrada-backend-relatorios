@@ -272,65 +272,184 @@ CRP/PR 08-39739
   return text;
 }
 
+
 function gerarPdfBuffer({ candidate, model, submittedAt, reportText, respostasOrganizadas }){
   return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ size: "A4", margin: 48, bufferPages: true });
+    const doc = new PDFDocument({
+      size: "A4",
+      margins: {
+        top: 105,
+        bottom: 75,
+        left: 48,
+        right: 48
+      },
+      bufferPages: true
+    });
+
     const chunks = [];
 
     doc.on("data", chunk => chunks.push(chunk));
     doc.on("end", () => resolve(Buffer.concat(chunks)));
     doc.on("error", reject);
 
-    doc.font("Helvetica-Bold").fontSize(18).text("Integrada Neuropsicologia", { align: "center" });
-    doc.moveDown(0.25);
-    doc.font("Helvetica").fontSize(10).text("Relatório auxiliar automatizado de avaliação", { align: "center" });
+    const avaliacaoNome = safe(model.name);
+    const tituloLaudo = `Laudo psicológico de aptidão para ${avaliacaoNome}`;
+
+    // Conteúdo principal
+    doc.font("Helvetica-Bold").fontSize(15).text(tituloLaudo, {
+      align: "center"
+    });
+
     doc.moveDown(1.2);
 
-    doc.font("Helvetica-Bold").fontSize(12).text("Dados gerais");
+    doc.font("Helvetica-Bold").fontSize(12).text("Dados do avaliando");
     doc.moveDown(0.5);
+
     doc.font("Helvetica").fontSize(10);
-    doc.text(`Paciente: ${safe(candidate.full_name)}`);
+    doc.text(`Nome: ${safe(candidate.full_name)}`);
     doc.text(`Documento/CPF: ${safe(candidate.primary_document_number || candidate.cpf)}`);
+    doc.text(`Data de nascimento: ${candidate.birth_date ? new Date(candidate.birth_date).toLocaleDateString("pt-BR") : "-"}`);
     doc.text(`E-mail: ${safe(candidate.email)}`);
     doc.text(`Telefone: ${safe(candidate.cell_phone || candidate.phone)}`);
-    doc.text(`Avaliação: ${safe(model.name)}`);
-    doc.text(`Data de envio: ${submittedAt ? new Date(submittedAt).toLocaleString("pt-BR") : "-"}`);
+    doc.text(`Profissão: ${safe(candidate.profession)}`);
+    doc.text(`Cidade/Estado: ${safe(candidate.city)} / ${safe(candidate.state)}`);
+    doc.text(`Avaliação aplicada: ${avaliacaoNome}`);
+    doc.text(`Data de preenchimento: ${submittedAt ? new Date(submittedAt).toLocaleString("pt-BR") : "-"}`);
+
     doc.moveDown(1);
 
-    doc.font("Helvetica-Bold").fontSize(12).text("Análise gerada por IA");
+    doc.font("Helvetica-Bold").fontSize(12).text("Laudo psicológico");
     doc.moveDown(0.5);
+
     doc.font("Helvetica").fontSize(10);
 
     String(reportText).split("\n").forEach(line => {
       const trimmed = line.trim();
+
       if(!trimmed){
         doc.moveDown(0.5);
         return;
       }
-      doc.text(trimmed, { align: "left", lineGap: 2 });
+
+      const upper = trimmed.toUpperCase();
+
+      const isHeading =
+        upper === "TÍTULO:" ||
+        upper === "IDENTIFICAÇÃO:" ||
+        upper === "BREVE RELATÓRIO:" ||
+        upper === "ANÁLISE PSICOLÓGICA:" ||
+        upper === "PONTOS DE ATENÇÃO:" ||
+        upper === "RESULTADO:" ||
+        upper === "JUSTIFICATIVA DO RESULTADO:" ||
+        upper === "RESPONSÁVEL TÉCNICA:";
+
+      const isResultado =
+        upper.includes("RESULTADO: APTO") ||
+        upper.includes("RESULTADO: INAPTO");
+
+      if(isHeading){
+        doc.moveDown(0.4);
+        doc.font("Helvetica-Bold").fontSize(11).text(trimmed, {
+          align: "left"
+        });
+        doc.moveDown(0.2);
+      } else if(isResultado){
+        doc.moveDown(0.5);
+        doc.font("Helvetica-Bold").fontSize(13).text(trimmed, {
+          align: "left"
+        });
+        doc.moveDown(0.5);
+        doc.font("Helvetica").fontSize(10);
+      } else {
+        doc.font("Helvetica").fontSize(10).text(trimmed, {
+          align: "justify",
+          lineGap: 3
+        });
+      }
     });
 
+    doc.moveDown(1.5);
+
+    doc.font("Helvetica-Bold").fontSize(11).text("Responsável técnica");
+    doc.moveDown(0.4);
+    doc.font("Helvetica").fontSize(10).text(RESPONSAVEL_TECNICA);
+    doc.text(RESPONSAVEL_CRP);
+
+    // Anexo com respostas preenchidas
     doc.addPage();
-    doc.font("Helvetica-Bold").fontSize(14).text("Respostas preenchidas", { align: "center" });
+
+    doc.font("Helvetica-Bold").fontSize(14).text("Respostas preenchidas", {
+      align: "center"
+    });
+
     doc.moveDown(1);
 
     respostasOrganizadas.forEach(item => {
       doc.font("Helvetica-Bold").fontSize(10).text(`${item.numero}. ${safe(item.pergunta)}`);
+
       if(item.secao){
         doc.font("Helvetica-Oblique").fontSize(9).text(`Seção: ${item.secao}`);
       }
+
       doc.font("Helvetica").fontSize(10).text(`Resposta: ${safe(item.resposta)}`);
       doc.moveDown(0.75);
     });
 
+    // Cabeçalho e rodapé em todas as páginas
     const range = doc.bufferedPageRange();
+
     for(let i = range.start; i < range.start + range.count; i++){
       doc.switchToPage(i);
+
+      // Cabeçalho
+      const logoExists = fs.existsSync(CLINIC_LOGO_PATH);
+
+      if(logoExists){
+        try{
+          doc.image(CLINIC_LOGO_PATH, 48, 24, {
+            fit: [120, 50]
+          });
+        }catch(error){
+          doc.font("Helvetica-Bold").fontSize(12).text(CLINIC_NAME, 48, 32);
+        }
+      } else {
+        doc.font("Helvetica-Bold").fontSize(12).text(CLINIC_NAME, 48, 32);
+      }
+
+      doc.font("Helvetica-Bold").fontSize(11).text(CLINIC_NAME, 180, 32, {
+        align: "right",
+        width: doc.page.width - 228
+      });
+
+      doc.moveTo(48, 85)
+        .lineTo(doc.page.width - 48, 85)
+        .stroke();
+
+      // Rodapé
+      const footerY = doc.page.height - 58;
+
+      doc.moveTo(48, footerY - 8)
+        .lineTo(doc.page.width - 48, footerY - 8)
+        .stroke();
+
+      doc.font("Helvetica").fontSize(8).text(
+        `${CLINIC_ADDRESS} - Telefone ${CLINIC_PHONE} - e-mail: ${CLINIC_EMAIL}`,
+        48,
+        footerY,
+        {
+          align: "center",
+          width: doc.page.width - 96
+        }
+      );
+
       doc.font("Helvetica").fontSize(8).text(
         `Página ${i + 1} de ${range.count}`,
         48,
-        doc.page.height - 34,
-        { align: "center", width: doc.page.width - 96 }
+        footerY + 14,
+        {
+          align: "center",
+          width: doc.page.width - 96
+        }
       );
     }
 
@@ -354,8 +473,8 @@ async function enviarEmailComPdf({ candidate, model, pdfBuffer }){
   await transporter.sendMail({
     from: `"${process.env.EMAIL_FROM_NAME || "Integrada Neuropsicologia"}" <${process.env.SMTP_USER}>`,
     to: EMAIL_TO,
-    subject: `Relatório automático - ${safe(candidate.full_name)} - ${safe(model.name)}`,
-    text: `Olá,\n\nSegue em anexo o relatório auxiliar automático da avaliação preenchida por ${safe(candidate.full_name)}.\n\nImportante: este relatório é auxiliar e precisa de revisão profissional.\n\nIntegrada Neuropsicologia`,
+    subject: `Laudo psicológico de aptidão - ${safe(candidate.full_name)} - ${safe(model.name)}`,
+text: `Olá,\n\nSegue em anexo o laudo psicológico de aptidão referente à avaliação preenchida por ${safe(candidate.full_name)}.\n\nAvaliação: ${safe(model.name)}\n\nResponsável técnica: Carla Luciana da Conceição Lima - CRP/PR 08-39739\n\nIntegrada Neuropsicologia`,
     attachments: [
       {
         filename,
