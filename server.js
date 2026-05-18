@@ -1,4 +1,6 @@
 import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
@@ -12,6 +14,8 @@ dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 10000;
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 function requiredEnv(name){
   if(!process.env[name]){
@@ -37,7 +41,7 @@ const RESPONSAVEL_CRP = "CRP/PR 08-39739";
 
 // Coloque sua logo dentro da pasta assets no backend:
 // backend/assets/logo.png
-const CLINIC_LOGO_PATH = process.env.CLINIC_LOGO_PATH || "./assets/logo.png";
+const CLINIC_LOGO_PATH = process.env.CLINIC_LOGO_PATH || path.join(__dirname, "assets", "logo.png");
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
   auth: { persistSession: false, autoRefreshToken: false }
