@@ -1,0 +1,22 @@
+{
+  "name": "integrada-backend-relatorios",
+  "version": "1.0.0",
+  "description": "Backend Render para analisar avaliações com OpenAI, gerar PDF e enviar por e-mail.",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "latest",
+    "cors": "latest",
+    "dotenv": "latest",
+    "express": "latest",
+    "nodemailer": "latest",
+    "openai": "latest",
+    "pdfkit": "latest"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
