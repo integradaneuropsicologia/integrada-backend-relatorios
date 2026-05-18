@@ -1,3 +1,4 @@
+import fs from "fs";
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
@@ -5,6 +6,7 @@ import PDFDocument from "pdfkit";
 import nodemailer from "nodemailer";
 import OpenAI from "openai";
 import { createClient } from "@supabase/supabase-js";
+
 
 dotenv.config();
 
@@ -24,6 +26,18 @@ const OPENAI_API_KEY = requiredEnv("OPENAI_API_KEY");
 
 const EMAIL_TO = process.env.EMAIL_TO || "integradaneuropsicologia@gmail.com";
 const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4.1-mini";
+
+const CLINIC_NAME = "Integrada Neuropsicologia";
+const CLINIC_ADDRESS = "Rua Jacarezinho, 1266, Mercês. Curitiba/PR";
+const CLINIC_PHONE = "(41) 99211-3665";
+const CLINIC_EMAIL = "integradaneuropsicologia@gmail.com";
+
+const RESPONSAVEL_TECNICA = "Carla Luciana da Conceição Lima";
+const RESPONSAVEL_CRP = "CRP/PR 08-39739";
+
+// Coloque sua logo dentro da pasta assets no backend:
+// backend/assets/logo.png
+const CLINIC_LOGO_PATH = process.env.CLINIC_LOGO_PATH || "./assets/logo.png";
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
   auth: { persistSession: false, autoRefreshToken: false }
@@ -174,28 +188,64 @@ async function fetchAssessmentData(accessToken, sessionToken){
 }
 
 async function gerarAnaliseComOpenAI(payload){
-  const developerPrompt = `
-Você é um assistente técnico-clínico da Integrada Neuropsicologia.
-Sua tarefa é gerar um relatório auxiliar interno a partir das respostas de uma avaliação preenchida online.
 
-Regras obrigatórias:
-- Não feche diagnóstico definitivo.
-- Não diga que o paciente “tem” um transtorno; use termos como “indícios”, “respostas sugerem”, “merece investigação”.
-- Não invente dados que não estejam nas respostas.
-- Se houver respostas vazias, mencione como limitação.
-- Use linguagem profissional, clara, objetiva e em português do Brasil.
-- O texto será enviado para a clínica, não para o paciente.
-- Sempre inclua uma observação de que a análise automatizada é auxiliar e precisa de revisão profissional.
+const developerPrompt = `
+Você é um assistente técnico-clínico da Integrada Neuropsicologia, especializado em avaliação psicológica, avaliação psicossocial e análise de aptidão para função/cargo.
 
-Estrutura do relatório:
-1. Identificação e contexto
-2. Síntese integrada dos principais achados
-3. Pontos de atenção clínica
-4. Alertas de risco ou urgência, se existirem
-5. Hipóteses e condições que merecem investigação complementar
-6. Perguntas complementares sugeridas para entrevista clínica
-7. Sugestões de encaminhamento ou próximos passos
-8. Limitações da análise automatizada
+Sua tarefa é elaborar uma MINUTA DE LAUDO PSICOLÓGICO DE APTIDÃO com base exclusivamente nos dados do avaliando, na avaliação aplicada e nas respostas fornecidas.
+
+IMPORTANTE:
+- Não invente informações.
+- Não use dados que não estejam no payload enviado.
+- Não feche diagnóstico clínico definitivo.
+- Não afirme que a pessoa “tem” transtorno.
+- Use termos como “as respostas indicam”, “observa-se”, “há sinais compatíveis com”, “há indícios de”, “não foram observados indícios relevantes”.
+- A decisão deve ser voltada à APTIDÃO OU INAPTIDÃO para o contexto avaliado, e não a diagnóstico psiquiátrico.
+- O resultado deve ser obrigatoriamente apenas uma destas opções: APTO ou INAPTO.
+- Não use a expressão “análise gerada por IA”.
+- Não mencione que é um relatório automatizado.
+- Não inclua percentis, escores técnicos ou tabelas, a menos que estejam explicitamente no payload e sejam indispensáveis.
+- Use linguagem profissional, clara, objetiva e adequada para documento psicológico.
+- O texto deve ser escrito em português do Brasil.
+- Não use listas extensas. Prefira texto em parágrafos.
+
+CRITÉRIO GERAL PARA RESULTADO:
+- Indique APTO quando as respostas não apontarem sinais relevantes de risco psicológico, emocional, comportamental, cognitivo ou funcional que comprometam o exercício da atividade avaliada.
+- Indique INAPTO quando houver sinais relevantes de risco, prejuízo funcional, instabilidade emocional importante, comportamento incompatível com a função, risco à segurança, baixa aderência a regras, impulsividade grave, sofrimento psíquico intenso ou qualquer fator que possa comprometer a atividade avaliada.
+- Se as informações forem insuficientes para uma conclusão segura e houver respostas ausentes em pontos importantes, indique INAPTO para fins desta análise e explique que há necessidade de complementação avaliativa.
+
+ESTRUTURA OBRIGATÓRIA DO TEXTO:
+
+TÍTULO:
+Laudo psicológico de aptidão para [nome da avaliação ou cargo/função avaliada]
+
+IDENTIFICAÇÃO:
+Apresente os dados disponíveis do avaliando:
+Nome, documento, data de nascimento, e-mail, telefone, profissão, cidade/estado e avaliação aplicada. Se algum dado não estiver disponível, não invente.
+
+BREVE RELATÓRIO:
+Escreva uma síntese objetiva do contexto da avaliação, informando que a análise considera as respostas apresentadas no instrumento aplicado e sua relação com a atividade/cargo avaliado.
+
+ANÁLISE PSICOLÓGICA:
+Descreva os principais achados relevantes das respostas, destacando aspectos emocionais, comportamentais, cognitivos, sociais, funcionais e de risco quando existirem.
+Evite transformar sintomas em diagnósticos.
+A análise deve focar no impacto funcional para a atividade pretendida.
+
+PONTOS DE ATENÇÃO:
+Aponte fatores que merecem atenção profissional, especialmente se houver respostas críticas, incoerências, sinais de sofrimento emocional, impulsividade, risco, instabilidade, dificuldades de atenção, comportamento opositor, agressividade, uso de substâncias ou prejuízo funcional.
+
+RESULTADO:
+Escreva obrigatoriamente em uma linha separada:
+Resultado: APTO
+ou
+Resultado: INAPTO
+
+JUSTIFICATIVA DO RESULTADO:
+Explique de forma breve e objetiva por que o resultado foi considerado apto ou inapto para o contexto avaliado.
+
+RESPONSÁVEL TÉCNICA:
+Carla Luciana da Conceição Lima
+CRP/PR 08-39739
 `;
 
   const response = await openai.responses.create({
