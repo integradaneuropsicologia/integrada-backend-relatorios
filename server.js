@@ -404,63 +404,78 @@ const isHeading =
     });
 
     // Cabeçalho e rodapé em todas as páginas
-    const range = doc.bufferedPageRange();
+const range = doc.bufferedPageRange();
 
-    for(let i = range.start; i < range.start + range.count; i++){
-      doc.switchToPage(i);
+for(let i = range.start; i < range.start + range.count; i++){
+  doc.switchToPage(i);
 
-      // Cabeçalho
-      const logoExists = fs.existsSync(CLINIC_LOGO_PATH);
+  const pageNumber = i + 1;
+  const pageCount = range.count;
 
-      if(logoExists){
-        try{
-          doc.image(CLINIC_LOGO_PATH, 48, 24, {
-            fit: [120, 50]
-          });
-        }catch(error){
-          doc.font("Helvetica-Bold").fontSize(12).text(CLINIC_NAME, 48, 32);
-        }
-      } else {
-        doc.font("Helvetica-Bold").fontSize(12).text(CLINIC_NAME, 48, 32);
-      }
+  // Salva posição atual do cursor
+  const oldY = doc.y;
 
-      doc.font("Helvetica-Bold").fontSize(11).text(CLINIC_NAME, 180, 32, {
-        align: "right",
-        width: doc.page.width - 228
+  // Cabeçalho
+  const logoExists = fs.existsSync(CLINIC_LOGO_PATH);
+
+  if(logoExists){
+    try{
+      doc.image(CLINIC_LOGO_PATH, 48, 24, {
+        fit: [120, 50]
       });
-
-      doc.moveTo(48, 85)
-        .lineTo(doc.page.width - 48, 85)
-        .stroke();
-
-      // Rodapé
-      const footerY = doc.page.height - 58;
-
-      doc.moveTo(48, footerY - 8)
-        .lineTo(doc.page.width - 48, footerY - 8)
-        .stroke();
-
-      doc.font("Helvetica").fontSize(8).text(
-        `${CLINIC_ADDRESS} - Telefone ${CLINIC_PHONE} - e-mail: ${CLINIC_EMAIL}`,
-        48,
-        footerY,
-        {
-          align: "center",
-          width: doc.page.width - 96
-        }
-      );
-
-      doc.font("Helvetica").fontSize(8).text(
-        `Página ${i + 1} de ${range.count}`,
-        48,
-        footerY + 14,
-        {
-          align: "center",
-          width: doc.page.width - 96
-        }
-      );
+    }catch(error){
+      doc.font("Helvetica-Bold").fontSize(12).text(CLINIC_NAME, 48, 32, {
+        lineBreak: false
+      });
     }
+  } else {
+    doc.font("Helvetica-Bold").fontSize(12).text(CLINIC_NAME, 48, 32, {
+      lineBreak: false
+    });
+  }
 
+  doc.font("Helvetica-Bold").fontSize(11).text(CLINIC_NAME, 180, 32, {
+    align: "right",
+    width: doc.page.width - 228,
+    lineBreak: false
+  });
+
+  doc.moveTo(48, 85)
+    .lineTo(doc.page.width - 48, 85)
+    .stroke();
+
+  // Rodapé
+  const footerY = doc.page.height - 58;
+
+  doc.moveTo(48, footerY - 8)
+    .lineTo(doc.page.width - 48, footerY - 8)
+    .stroke();
+
+  doc.font("Helvetica").fontSize(8).text(
+    `${CLINIC_ADDRESS} - Telefone ${CLINIC_PHONE} - e-mail: ${CLINIC_EMAIL}`,
+    48,
+    footerY,
+    {
+      align: "center",
+      width: doc.page.width - 96,
+      lineBreak: false
+    }
+  );
+
+  doc.font("Helvetica").fontSize(8).text(
+    `Página ${pageNumber} de ${pageCount}`,
+    48,
+    footerY + 14,
+    {
+      align: "center",
+      width: doc.page.width - 96,
+      lineBreak: false
+    }
+  );
+
+  // Restaura posição do cursor para não interferir no conteúdo
+  doc.y = oldY;
+}
     doc.end();
   });
 }
