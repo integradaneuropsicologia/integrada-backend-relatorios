@@ -12,10 +12,11 @@ import { createClient } from "@supabase/supabase-js";
 
 dotenv.config();
 
-const app = express();
-const PORT = process.env.PORT || 10000;
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const app = express();
+const PORT = process.env.PORT || 10000;
+
 
 function requiredEnv(name){
   if(!process.env[name]){
@@ -76,6 +77,17 @@ function onlyNumbers(value){
 function safe(value, fallback = "-"){
   const text = String(value ?? "").trim();
   return text || fallback;
+}
+
+function formatDateOnly(value){
+  if(!value) return "-";
+
+  const parts = String(value).split("-");
+  if(parts.length === 3){
+    return `${parts[2]}/${parts[1]}/${parts[0]}`;
+  }
+
+  return safe(value);
 }
 
 function sanitizeFilename(value){
@@ -220,9 +232,6 @@ CRITÉRIO GERAL PARA RESULTADO:
 
 ESTRUTURA OBRIGATÓRIA DO TEXTO:
 
-TÍTULO:
-Laudo psicológico de aptidão para [nome da avaliação ou cargo/função avaliada]
-
 IDENTIFICAÇÃO:
 Apresente os dados disponíveis do avaliando:
 Nome, documento, data de nascimento, e-mail, telefone, profissão, cidade/estado e avaliação aplicada. Se algum dado não estiver disponível, não invente.
@@ -247,9 +256,6 @@ Resultado: INAPTO
 JUSTIFICATIVA DO RESULTADO:
 Explique de forma breve e objetiva por que o resultado foi considerado apto ou inapto para o contexto avaliado.
 
-RESPONSÁVEL TÉCNICA:
-Carla Luciana da Conceição Lima
-CRP/PR 08-39739
 `;
 
   const response = await openai.responses.create({
@@ -312,7 +318,7 @@ function gerarPdfBuffer({ candidate, model, submittedAt, reportText, respostasOr
     doc.font("Helvetica").fontSize(10);
     doc.text(`Nome: ${safe(candidate.full_name)}`);
     doc.text(`Documento/CPF: ${safe(candidate.primary_document_number || candidate.cpf)}`);
-    doc.text(`Data de nascimento: ${candidate.birth_date ? new Date(candidate.birth_date).toLocaleDateString("pt-BR") : "-"}`);
+    doc.text(`Data de nascimento: ${formatDateOnly(candidate.birth_date)}`);
     doc.text(`E-mail: ${safe(candidate.email)}`);
     doc.text(`Telefone: ${safe(candidate.cell_phone || candidate.phone)}`);
     doc.text(`Profissão: ${safe(candidate.profession)}`);
@@ -337,15 +343,13 @@ function gerarPdfBuffer({ candidate, model, submittedAt, reportText, respostasOr
 
       const upper = trimmed.toUpperCase();
 
-      const isHeading =
-        upper === "TÍTULO:" ||
-        upper === "IDENTIFICAÇÃO:" ||
-        upper === "BREVE RELATÓRIO:" ||
-        upper === "ANÁLISE PSICOLÓGICA:" ||
-        upper === "PONTOS DE ATENÇÃO:" ||
-        upper === "RESULTADO:" ||
-        upper === "JUSTIFICATIVA DO RESULTADO:" ||
-        upper === "RESPONSÁVEL TÉCNICA:";
+const isHeading =
+  upper === "IDENTIFICAÇÃO:" ||
+  upper === "BREVE RELATÓRIO:" ||
+  upper === "ANÁLISE PSICOLÓGICA:" ||
+  upper === "PONTOS DE ATENÇÃO:" ||
+  upper === "RESULTADO:" ||
+  upper === "JUSTIFICATIVA DO RESULTADO:";
 
       const isResultado =
         upper.includes("RESULTADO: APTO") ||
@@ -477,7 +481,8 @@ async function enviarEmailComPdf({ candidate, model, pdfBuffer }){
   await transporter.sendMail({
     from: `"${process.env.EMAIL_FROM_NAME || "Integrada Neuropsicologia"}" <${process.env.SMTP_USER}>`,
     to: EMAIL_TO,
-    subject: `Laudo psicológico de aptidão - ${safe(candidate.full_name)} - ${safe(model.name)}`,
+   subject: `Laudo psicológico de aptidão - ${safe(candidate.full_name)} - ${safe(model.name)}`,
+
 text: `Olá,\n\nSegue em anexo o laudo psicológico de aptidão referente à avaliação preenchida por ${safe(candidate.full_name)}.\n\nAvaliação: ${safe(model.name)}\n\nResponsável técnica: Carla Luciana da Conceição Lima - CRP/PR 08-39739\n\nIntegrada Neuropsicologia`,
     attachments: [
       {
