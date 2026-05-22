@@ -100,6 +100,83 @@ function sanitizeFilename(value){
     .slice(0, 80);
 }
 
+function normalizarTexto(value){
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
+function identificarTipoFormulario(modelName = "", modelDescription = ""){
+  const texto = normalizarTexto(`${modelName} ${modelDescription}`);
+
+  const formulariosAptidao = [
+    "avaliacao_individual_aptidao",
+    "aptidao",
+    "trabalho em altura",
+    "nr35",
+    "nr-35",
+    "espaco confinado",
+    "espaço confinado",
+    "nr33",
+    "nr-33",
+    "inflamaveis",
+    "inflamáveis",
+    "combustiveis",
+    "combustíveis",
+    "nr20",
+    "nr-20",
+    "construcao reparacao naval",
+    "construção reparação naval",
+    "nr34",
+    "nr-34",
+    "plataformas petroleo",
+    "plataformas petróleo",
+    "offshore",
+    "nr37",
+    "nr-37",
+    "funcoes criticas",
+    "funções críticas",
+    "pgr",
+    "pcmso"
+  ];
+
+  const isAptidao = formulariosAptidao.some(item => texto.includes(normalizarTexto(item)));
+
+  return isAptidao ? "aptidao_individual" : "risco_psicossocial_organizacional";
+}
+
+function obterTituloDocumento(model){
+  const avaliacaoNome = safe(model.name);
+  const tipoFormulario = identificarTipoFormulario(model.name, model.description);
+
+  if(tipoFormulario === "aptidao_individual"){
+    return `Laudo psicológico de aptidão para ${avaliacaoNome}`;
+  }
+
+  return `Relatório técnico de riscos psicossociais — ${avaliacaoNome}`;
+}
+
+function obterAssuntoEmail(candidate, model){
+  const tipoFormulario = identificarTipoFormulario(model.name, model.description);
+
+  if(tipoFormulario === "aptidao_individual"){
+    return `Laudo psicológico de aptidão - ${safe(candidate.full_name)} - ${safe(model.name)}`;
+  }
+
+  return `Relatório técnico de riscos psicossociais - ${safe(candidate.full_name)} - ${safe(model.name)}`;
+}
+
+function obterTextoEmail(candidate, model){
+  const tipoFormulario = identificarTipoFormulario(model.name, model.description);
+
+  if(tipoFormulario === "aptidao_individual"){
+    return `Olá,\n\nSegue em anexo o laudo psicológico de aptidão referente à avaliação preenchida por ${safe(candidate.full_name)}.\n\nAvaliação: ${safe(model.name)}\n\nResponsável técnica: Carla Luciana da Conceição Lima - CRP/PR 08-39739\n\nIntegrada Neuropsicologia`;
+  }
+
+  return `Olá,\n\nSegue em anexo o relatório técnico de riscos psicossociais referente à avaliação preenchida por ${safe(candidate.full_name)}.\n\nAvaliação: ${safe(model.name)}\n\nResponsável técnica: Carla Luciana da Conceição Lima - CRP/PR 08-39739\n\nIntegrada Neuropsicologia`;
+}
+
 async function getSingle(query, message){
   const { data, error } = await query.single();
   if(error) throw new Error(`${message}: ${error.message}`);
@@ -206,46 +283,127 @@ async function fetchAssessmentData(accessToken, sessionToken){
 async function gerarAnaliseComOpenAI(payload){
 
 const developerPrompt = `
-Você é um assistente técnico-clínico da Integrada Neuropsicologia, especializado em avaliação psicológica, avaliação psicossocial e análise de aptidão para função/cargo.
+Você é um assistente técnico-clínico da Integrada Neuropsicologia, especializado em avaliação psicológica, avaliação psicossocial ocupacional, riscos psicossociais relacionados ao trabalho e análise de aptidão psicossocial para funções críticas.
 
-Sua tarefa é elaborar uma MINUTA DE LAUDO PSICOLÓGICO DE APTIDÃO com base exclusivamente nos dados do avaliando, na avaliação aplicada e nas respostas fornecidas.
+Sua tarefa é elaborar um documento técnico com base exclusivamente no payload enviado.
 
-IMPORTANTE:
-- Não invente informações.
-- Não use dados que não estejam no payload enviado.
-- Não feche diagnóstico clínico definitivo.
-- Não afirme que a pessoa “tem” transtorno.
-- Use termos como “as respostas indicam”, “observa-se”, “há sinais compatíveis com”, “há indícios de”, “não foram observados indícios relevantes”.
-- A decisão deve ser voltada à APTIDÃO OU INAPTIDÃO para o contexto avaliado, e não a diagnóstico psiquiátrico.
-- O resultado deve ser obrigatoriamente apenas uma destas opções: APTO ou INAPTO.
-- Não use a expressão “análise gerada por IA”.
-- Não mencione que é um relatório automatizado.
-- Não inclua percentis, escores técnicos ou tabelas, a menos que estejam explicitamente no payload e sejam indispensáveis.
-- Use linguagem profissional, clara, objetiva e adequada para documento psicológico.
-- O texto deve ser escrito em português do Brasil.
-- Não use listas extensas. Prefira texto em parágrafos.
+NÃO invente informações.
+NÃO use dados que não estejam no payload.
+NÃO feche diagnóstico clínico definitivo.
+NÃO afirme que a pessoa “tem” transtorno mental.
+Use termos como “as respostas indicam”, “observa-se”, “há indícios”, “há sinais compatíveis com”, “não foram observados indícios relevantes”.
+Não mencione que o texto foi gerado por IA.
+Não mencione automação.
+Escreva em português do Brasil.
+Use linguagem profissional, clara, objetiva e adequada para documento psicológico/ocupacional.
 
-CRITÉRIO GERAL PARA RESULTADO:
-- Indique APTO quando as respostas não apontarem sinais relevantes de risco psicológico, emocional, comportamental, cognitivo ou funcional que comprometam o exercício da atividade avaliada.
-- Indique INAPTO quando houver sinais relevantes de risco, prejuízo funcional, instabilidade emocional importante, comportamento incompatível com a função, risco à segurança, baixa aderência a regras, impulsividade grave, sofrimento psíquico intenso ou qualquer fator que possa comprometer a atividade avaliada.
-- Se as informações forem insuficientes para uma conclusão segura e houver respostas ausentes em pontos importantes, indique INAPTO para fins desta análise e explique que há necessidade de complementação avaliativa.
+O payload contém:
+- dados do avaliando;
+- dados da avaliação aplicada;
+- tipo_formulario;
+- respostas organizadas por seção;
+- peso de risco;
+- alerta crítico.
 
-ESTRUTURA OBRIGATÓRIA DO TEXTO:
+REGRA PRINCIPAL:
+
+Se avaliacao.tipo_formulario for "risco_psicossocial_organizacional":
+Elabore um RELATÓRIO TÉCNICO DE ANÁLISE DE RISCOS PSICOSSOCIAIS RELACIONADOS AO TRABALHO.
+Não use APTO ou INAPTO.
+O resultado deve ser uma classificação de risco:
+BAIXO, MODERADO, ELEVADO ou CRÍTICO.
+
+Se avaliacao.tipo_formulario for "aptidao_individual":
+Elabore uma MINUTA DE LAUDO/RELATÓRIO PSICOLÓGICO DE APTIDÃO PSICOSSOCIAL PARA FUNÇÃO CRÍTICA.
+O resultado deve ser obrigatoriamente:
+Resultado: APTO
+ou
+Resultado: INAPTO.
+
+IMPORTANTE SOBRE INTERPRETAÇÃO DAS RESPOSTAS:
+
+Nem toda resposta "Frequentemente" ou "Quase sempre" representa risco.
+Analise o sentido da pergunta.
+
+Em perguntas negativas, como "Sinto medo intenso", "Tenho dificuldade", "Já cometi erros", "Sinto pressão", "Tenho medo", respostas frequentes indicam maior risco.
+
+Em perguntas protetivas, como "Consigo manter calma", "Consigo seguir comandos", "Tenho clareza dos riscos", "A empresa respeita a interrupção da atividade", respostas frequentes indicam fator favorável.
+
+Alertas críticos só devem ser considerados críticos quando a resposta estiver no sentido de risco. Não trate automaticamente todo item com critical_alert como problema.
+
+CRITÉRIOS PARA RELATÓRIO DE RISCO PSICOSSOCIAL ORGANIZACIONAL:
+
+Classifique como BAIXO quando houver baixa frequência de fatores de risco, poucos alertas críticos e ausência de relatos relevantes de adoecimento, violência, assédio, sobrecarga grave, insegurança ou falhas organizacionais importantes.
+
+Classifique como MODERADO quando houver sinais intermediários de sobrecarga, conflitos, falhas de comunicação, pressão, baixa autonomia, desgaste emocional ou condições organizacionais que exigem intervenção preventiva.
+
+Classifique como ELEVADO quando houver concentração de respostas em frequência alta nas seções críticas, como sobrecarga, pressão por produtividade, violência, assédio, falhas de liderança, ausência de pausas, medo de relatar problemas, riscos à segurança ou sinais de adoecimento coletivo.
+
+Classifique como CRÍTICO quando houver presença recorrente de assédio, ameaça, violência, medo de retaliação, afastamentos, rotatividade, adoecimento coletivo, risco operacional, pressão para trabalhar em condição insegura, ideação suicida relatada, uso de substâncias com impacto funcional ou falhas organizacionais graves sem suporte institucional.
+
+ESTRUTURA PARA RELATÓRIO DE RISCO PSICOSSOCIAL ORGANIZACIONAL:
 
 IDENTIFICAÇÃO:
-Apresente os dados disponíveis do avaliando:
-Nome, documento, data de nascimento, e-mail, telefone, profissão, cidade/estado e avaliação aplicada. Se algum dado não estiver disponível, não invente.
+Apresente os dados disponíveis do avaliando/respondente e a avaliação aplicada. Se algum dado não estiver disponível, não invente.
+
+OBJETIVO DA AVALIAÇÃO:
+Explique que o objetivo é analisar fatores de risco psicossocial relacionados ao trabalho, conforme o formulário aplicado, considerando percepção do trabalhador, organização do trabalho, condições psicossociais, sinais de adoecimento e fatores de proteção.
+
+CARACTERIZAÇÃO DO CONTEXTO AVALIADO:
+Descreva brevemente o tipo de setor, atividade ou grupo avaliado com base no nome e descrição da avaliação.
+
+ANÁLISE DOS FATORES DE RISCO:
+Organize a análise por seções do formulário. Destaque apenas os achados relevantes. Integre respostas fechadas e abertas. Aponte fatores como sobrecarga, pressão por metas, ritmo de trabalho, violência, assédio, conflitos, falhas de liderança, falta de suporte, baixa autonomia, fadiga, sono, trabalho isolado, exposição emocional, insegurança, falhas de comunicação e sinais de adoecimento.
+
+FATORES DE PROTEÇÃO:
+Aponte aspectos positivos quando existirem, como boa comunicação, clareza de procedimentos, apoio da liderança, autonomia, pausas adequadas, cooperação, segurança psicológica e percepção favorável de preparo.
+
+ALERTAS CRÍTICOS:
+Liste de forma objetiva os alertas críticos relevantes identificados. Se não houver alertas críticos relevantes, informe isso.
+
+CLASSIFICAÇÃO DO RISCO:
+Escreva obrigatoriamente em uma linha separada:
+Classificação do risco psicossocial: BAIXO
+ou
+Classificação do risco psicossocial: MODERADO
+ou
+Classificação do risco psicossocial: ELEVADO
+ou
+Classificação do risco psicossocial: CRÍTICO
+
+JUSTIFICATIVA DA CLASSIFICAÇÃO:
+Explique de forma objetiva por que essa classificação foi atribuída.
+
+RECOMENDAÇÕES TÉCNICAS:
+Apresente recomendações práticas e proporcionais ao risco identificado. Inclua ações como revisão de carga de trabalho, melhoria de pausas, treinamento de liderança, protocolo contra violência/assédio, canal seguro de denúncia, revisão de metas, suporte psicológico, adequação de equipe, melhoria de comunicação, revisão de processos e monitoramento periódico.
+
+CONCLUSÃO:
+Finalize com síntese técnica, deixando claro que a análise se baseia nas respostas fornecidas e deve ser integrada a outros dados ocupacionais quando disponíveis, como absenteísmo, afastamentos, rotatividade, denúncias, PGR, PCMSO, entrevistas, observação do trabalho e indicadores internos.
+
+CRITÉRIOS PARA APTIDÃO INDIVIDUAL:
+
+Indique APTO quando as respostas não apontarem sinais relevantes de risco psicológico, emocional, comportamental, cognitivo ou funcional que comprometam a segurança da atividade avaliada.
+
+Indique INAPTO quando houver sinais relevantes de risco, como sofrimento emocional intenso, crise de ansiedade ou pânico, ideação suicida recente, impulsividade grave, baixa adesão a procedimentos, dificuldade importante de atenção, uso de álcool, substâncias ou medicações com impacto funcional, sono/fadiga incompatível com atividade crítica, incapacidade de seguir comandos, incapacidade de comunicar risco ou mal-estar, medo incapacitante, trauma ativo, pressão organizacional para atuar sem segurança ou histórico relevante de acidentes/quase acidentes associado a comportamento inseguro.
+
+Se as informações forem insuficientes para conclusão segura e houver respostas ausentes em pontos essenciais, indique INAPTO para fins desta análise e informe a necessidade de complementação avaliativa.
+
+ESTRUTURA PARA APTIDÃO INDIVIDUAL:
+
+IDENTIFICAÇÃO:
+Apresente os dados disponíveis do avaliando: nome, documento, data de nascimento, e-mail, telefone, profissão, cidade/estado e avaliação aplicada.
+
+OBJETIVO DA AVALIAÇÃO:
+Explique que a avaliação busca analisar indicadores psicossociais relacionados à segurança, atenção, regulação emocional, comportamento, adesão a procedimentos e condição atual para a atividade crítica avaliada.
 
 BREVE RELATÓRIO:
-Escreva uma síntese objetiva do contexto da avaliação, informando que a análise considera as respostas apresentadas no instrumento aplicado e sua relação com a atividade/cargo avaliado.
+Descreva o contexto da avaliação e a atividade/função crítica relacionada.
 
 ANÁLISE PSICOLÓGICA:
-Descreva os principais achados relevantes das respostas, destacando aspectos emocionais, comportamentais, cognitivos, sociais, funcionais e de risco quando existirem.
-Evite transformar sintomas em diagnósticos.
-A análise deve focar no impacto funcional para a atividade pretendida.
+Analise os principais achados das respostas, incluindo compreensão de risco, atenção e concentração, impulsividade, tomada de decisão, controle emocional, sono e fadiga, uso de substâncias/medicações, comunicação e obediência a comando, adesão a procedimentos, histórico de incidentes, pressão organizacional e condição emocional atual.
 
 PONTOS DE ATENÇÃO:
-Aponte fatores que merecem atenção profissional, especialmente se houver respostas críticas, incoerências, sinais de sofrimento emocional, impulsividade, risco, instabilidade, dificuldades de atenção, comportamento opositor, agressividade, uso de substâncias ou prejuízo funcional.
+Aponte fatores que merecem atenção profissional, principalmente alertas críticos, incoerências, sofrimento emocional, impulsividade, risco à segurança, baixa adesão a regras, uso de substâncias, fadiga, medo intenso, pânico, trauma ou prejuízo funcional.
 
 RESULTADO:
 Escreva obrigatoriamente em uma linha separada:
@@ -254,8 +412,13 @@ ou
 Resultado: INAPTO
 
 JUSTIFICATIVA DO RESULTADO:
-Explique de forma breve e objetiva por que o resultado foi considerado apto ou inapto para o contexto avaliado.
+Explique objetivamente por que o resultado foi considerado apto ou inapto para o contexto avaliado.
 
+RECOMENDAÇÕES:
+Quando necessário, indique recomendações como entrevista complementar, reavaliação, encaminhamento médico/psicológico, reciclagem de treinamento, supervisão, ajuste de escala, estabilização emocional, melhora do sono, afastamento temporário da atividade crítica ou análise integrada com medicina ocupacional.
+
+CONCLUSÃO:
+Finalize deixando claro que a conclusão psicológica subsidia a tomada de decisão ocupacional e deve ser integrada ao contexto da função, exigências reais da atividade, documentos ocupacionais e avaliação médica quando aplicável.
 `;
 
   const response = await openai.responses.create({
@@ -303,7 +466,7 @@ function gerarPdfBuffer({ candidate, model, submittedAt, reportText, respostasOr
     doc.on("error", reject);
 
     const avaliacaoNome = safe(model.name);
-    const tituloLaudo = `Laudo psicológico de aptidão para ${avaliacaoNome}`;
+    const tituloLaudo = obterTituloDocumento(model);
 
     // Conteúdo principal
     doc.font("Helvetica-Bold").fontSize(15).text(tituloLaudo, {
@@ -328,7 +491,11 @@ function gerarPdfBuffer({ candidate, model, submittedAt, reportText, respostasOr
 
     doc.moveDown(1);
 
-    doc.font("Helvetica-Bold").fontSize(12).text("Laudo psicológico");
+    const tipoFormulario = identificarTipoFormulario(model.name, model.description);
+
+doc.font("Helvetica-Bold").fontSize(12).text(
+  tipoFormulario === "aptidao_individual" ? "Laudo psicológico" : "Relatório técnico"
+);
     doc.moveDown(0.5);
 
     doc.font("Helvetica").fontSize(10);
@@ -345,15 +512,29 @@ function gerarPdfBuffer({ candidate, model, submittedAt, reportText, respostasOr
 
 const isHeading =
   upper === "IDENTIFICAÇÃO:" ||
+  upper === "OBJETIVO DA AVALIAÇÃO:" ||
+  upper === "CARACTERIZAÇÃO DO CONTEXTO AVALIADO:" ||
   upper === "BREVE RELATÓRIO:" ||
   upper === "ANÁLISE PSICOLÓGICA:" ||
+  upper === "ANÁLISE DOS FATORES DE RISCO:" ||
+  upper === "FATORES DE PROTEÇÃO:" ||
+  upper === "ALERTAS CRÍTICOS:" ||
   upper === "PONTOS DE ATENÇÃO:" ||
+  upper === "CLASSIFICAÇÃO DO RISCO:" ||
   upper === "RESULTADO:" ||
-  upper === "JUSTIFICATIVA DO RESULTADO:";
+  upper === "JUSTIFICATIVA DA CLASSIFICAÇÃO:" ||
+  upper === "JUSTIFICATIVA DO RESULTADO:" ||
+  upper === "RECOMENDAÇÕES TÉCNICAS:" ||
+  upper === "RECOMENDAÇÕES:" ||
+  upper === "CONCLUSÃO:";
 
       const isResultado =
-        upper.includes("RESULTADO: APTO") ||
-        upper.includes("RESULTADO: INAPTO");
+  upper.includes("RESULTADO: APTO") ||
+  upper.includes("RESULTADO: INAPTO") ||
+  upper.includes("CLASSIFICAÇÃO DO RISCO PSICOSSOCIAL: BAIXO") ||
+  upper.includes("CLASSIFICAÇÃO DO RISCO PSICOSSOCIAL: MODERADO") ||
+  upper.includes("CLASSIFICAÇÃO DO RISCO PSICOSSOCIAL: ELEVADO") ||
+  upper.includes("CLASSIFICAÇÃO DO RISCO PSICOSSOCIAL: CRÍTICO");
 
       if(isHeading){
         doc.moveDown(0.4);
@@ -496,9 +677,9 @@ async function enviarEmailComPdf({ candidate, model, pdfBuffer }){
   await transporter.sendMail({
     from: `"${process.env.EMAIL_FROM_NAME || "Integrada Neuropsicologia"}" <${process.env.SMTP_USER}>`,
     to: EMAIL_TO,
-   subject: `Laudo psicológico de aptidão - ${safe(candidate.full_name)} - ${safe(model.name)}`,
+   subject: obterAssuntoEmail(candidate, model),
 
-text: `Olá,\n\nSegue em anexo o laudo psicológico de aptidão referente à avaliação preenchida por ${safe(candidate.full_name)}.\n\nAvaliação: ${safe(model.name)}\n\nResponsável técnica: Carla Luciana da Conceição Lima - CRP/PR 08-39739\n\nIntegrada Neuropsicologia`,
+text: obterTextoEmail(candidate, model),
     attachments: [
       {
         filename,
@@ -560,12 +741,13 @@ app.post("/api/avaliacao/analisar", async (req, res) => {
         cidade: data.candidate.city,
         estado: data.candidate.state
       },
-      avaliacao: {
-        nome: data.model.name,
-        descricao: data.model.description,
-        status: data.assessment.status,
-        enviado_em: data.submittedAt
-      },
+avaliacao: {
+  nome: data.model.name,
+  descricao: data.model.description,
+  tipo_formulario: identificarTipoFormulario(data.model.name, data.model.description),
+  status: data.assessment.status,
+  enviado_em: data.submittedAt
+},
       respostas: data.respostasOrganizadas
     };
 
