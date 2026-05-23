@@ -475,12 +475,12 @@ function gerarPdfBuffer({ candidate, model, submittedAt, reportText, respostasOr
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({
       size: "A4",
-      margins: {
-        top: 105,
-        bottom: 75,
-        left: 48,
-        right: 48
-      },
+margins: {
+  top: 105,
+  bottom: 110,
+  left: 48,
+  right: 48
+},
       bufferPages: true
     });
 
@@ -574,17 +574,21 @@ const isHeading =
 
 
 
-    // Cabeçalho e rodapé em todas as páginas
+// Cabeçalho e rodapé em todas as páginas
 const range = doc.bufferedPageRange();
 
 for(let i = range.start; i < range.start + range.count; i++){
   doc.switchToPage(i);
 
-  const pageNumber = i + 1;
+  const pageNumber = i - range.start + 1;
   const pageCount = range.count;
 
-  // Salva posição atual do cursor
+  const oldX = doc.x;
   const oldY = doc.y;
+  const oldBottomMargin = doc.page.margins.bottom;
+
+  // Permite escrever o rodapé dentro da área inferior sem criar páginas extras
+  doc.page.margins.bottom = 20;
 
   // Cabeçalho
   const logoExists = fs.existsSync(CLINIC_LOGO_PATH);
@@ -616,7 +620,7 @@ for(let i = range.start; i < range.start + range.count; i++){
     .stroke();
 
   // Rodapé
-  const footerY = doc.page.height - 58;
+  const footerY = doc.page.height - 70;
 
   doc.moveTo(48, footerY - 8)
     .lineTo(doc.page.width - 48, footerY - 8)
@@ -644,7 +648,8 @@ for(let i = range.start; i < range.start + range.count; i++){
     }
   );
 
-  // Restaura posição do cursor para não interferir no conteúdo
+  doc.page.margins.bottom = oldBottomMargin;
+  doc.x = oldX;
   doc.y = oldY;
 }
     doc.end();
