@@ -107,6 +107,25 @@ function normalizarTexto(value){
     .toLowerCase();
 }
 
+function limparTextoRelatorio(text){
+  return String(text || "")
+    .split("\n")
+    .filter(line => {
+      const t = normalizarTexto(line).trim();
+
+      if(t.includes("assistente tecnico")) return false;
+      if(t.includes("assistente tecnico-clinico")) return false;
+      if(t.includes("integrada neuropsicologia assistente")) return false;
+      if(t === "integrada neuropsicologia") return false;
+      if(t === "assistente tecnico") return false;
+      if(t === "assistente tecnico-clinico") return false;
+
+      return true;
+    })
+    .join("\n")
+    .trim();
+}
+
 function identificarTipoFormulario(modelName = "", modelDescription = ""){
   const texto = normalizarTexto(`${modelName} ${modelDescription}`);
 
@@ -283,7 +302,7 @@ async function fetchAssessmentData(accessToken, sessionToken){
 async function gerarAnaliseComOpenAI(payload){
 
 const developerPrompt = `
-Você é um assistente técnico-clínico da Integrada Neuropsicologia, especializado em avaliação psicológica, avaliação psicossocial ocupacional, riscos psicossociais relacionados ao trabalho e análise de aptidão psicossocial para funções críticas.
+Atue internamente como especialista técnico em avaliação psicológica, avaliação psicossocial ocupacional, riscos psicossociais relacionados ao trabalho e análise de aptidão psicossocial para funções críticas.
 
 Sua tarefa é elaborar um documento técnico com base exclusivamente no payload enviado.
 
@@ -294,6 +313,12 @@ NÃO afirme que a pessoa “tem” transtorno mental.
 Use termos como “as respostas indicam”, “observa-se”, “há indícios”, “há sinais compatíveis com”, “não foram observados indícios relevantes”.
 Não mencione que o texto foi gerado por IA.
 Não mencione automação.
+NÃO assine o documento.
+NÃO escreva “Integrada Neuropsicologia assistente técnico”.
+NÃO escreva “assistente técnico-clínico”.
+NÃO inclua nome da clínica como assinatura no final do texto.
+NÃO inclua rodapé, carimbo, local, data ou assinatura profissional no texto gerado.
+Finalize o documento exclusivamente na seção CONCLUSÃO.
 Escreva em português do Brasil.
 Use linguagem profissional, clara, objetiva e adequada para documento psicológico/ocupacional.
 
@@ -439,10 +464,10 @@ Finalize deixando claro que a conclusão psicológica subsidia a tomada de decis
   const text = response.output_text?.trim();
 
   if(!text){
-    throw new Error("A OpenAI não retornou texto de relatório.");
+    throw new Error("Não foi possível retornar o texto do relatório.");
   }
 
-  return text;
+  return limparTextoRelatorio(text);
 }
 
 
@@ -473,40 +498,23 @@ function gerarPdfBuffer({ candidate, model, submittedAt, reportText, respostasOr
       align: "center"
     });
 
-    doc.moveDown(1.2);
+   doc.moveDown(0.8);
 
-    doc.font("Helvetica-Bold").fontSize(12).text("Dados do avaliando");
-    doc.moveDown(0.5);
-
-    doc.font("Helvetica").fontSize(10);
-    doc.text(`Nome: ${safe(candidate.full_name)}`);
-    doc.text(`Documento/CPF: ${safe(candidate.primary_document_number || candidate.cpf)}`);
-    doc.text(`Data de nascimento: ${formatDateOnly(candidate.birth_date)}`);
-    doc.text(`E-mail: ${safe(candidate.email)}`);
-    doc.text(`Telefone: ${safe(candidate.cell_phone || candidate.phone)}`);
-    doc.text(`Profissão: ${safe(candidate.profession)}`);
-    doc.text(`Cidade/Estado: ${safe(candidate.city)} / ${safe(candidate.state)}`);
-    doc.text(`Avaliação aplicada: ${avaliacaoNome}`);
-    doc.text(`Data de preenchimento: ${submittedAt ? new Date(submittedAt).toLocaleString("pt-BR") : "-"}`);
-
-    doc.moveDown(1);
-
-    const tipoFormulario = identificarTipoFormulario(model.name, model.description);
+const tipoFormulario = identificarTipoFormulario(model.name, model.description);
 
 doc.font("Helvetica-Bold").fontSize(12).text(
   tipoFormulario === "aptidao_individual" ? "Laudo psicológico" : "Relatório técnico"
 );
-    doc.moveDown(0.5);
 
-    doc.font("Helvetica").fontSize(10);
+doc.moveDown(0.5);
+doc.font("Helvetica").fontSize(10);
 
     String(reportText).split("\n").forEach(line => {
       const trimmed = line.trim();
 
-      if(!trimmed){
-        doc.moveDown(0.5);
-        return;
-      }
+if(!trimmed){
+  return;
+}
 
       const upper = trimmed.toUpperCase();
 
@@ -564,25 +572,7 @@ const isHeading =
     doc.font("Helvetica").fontSize(10).text(RESPONSAVEL_TECNICA);
     doc.text(RESPONSAVEL_CRP);
 
-    // Anexo com respostas preenchidas
-    doc.addPage();
 
-    doc.font("Helvetica-Bold").fontSize(14).text("Respostas preenchidas", {
-      align: "center"
-    });
-
-    doc.moveDown(1);
-
-    respostasOrganizadas.forEach(item => {
-      doc.font("Helvetica-Bold").fontSize(10).text(`${item.numero}. ${safe(item.pergunta)}`);
-
-      if(item.secao){
-        doc.font("Helvetica-Oblique").fontSize(9).text(`Seção: ${item.secao}`);
-      }
-
-      doc.font("Helvetica").fontSize(10).text(`Resposta: ${safe(item.resposta)}`);
-      doc.moveDown(0.75);
-    });
 
     // Cabeçalho e rodapé em todas as páginas
 const range = doc.bufferedPageRange();
