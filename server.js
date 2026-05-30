@@ -1,5 +1,6 @@
 import fs from "fs";
 import path from "path";
+import crypto from "crypto";
 import { fileURLToPath } from "url";
 import express from "express";
 import cors from "cors";
@@ -70,8 +71,11 @@ app.get("/health", (req, res) => {
   res.json({ ok: true, service: "integrada-backend-relatorios" });
 });
 
-function onlyNumbers(value){
-  return String(value || "").replace(/\D/g, "");
+function sha256(value){
+  return crypto
+    .createHash("sha256")
+    .update(String(value || ""))
+    .digest("hex");
 }
 
 function safe(value, fallback = "-"){
@@ -219,20 +223,10 @@ function getAnswerValue(answers, questionId){
 async function fetchAssessmentData(accessToken, sessionToken){
   const now = new Date().toISOString();
 
-  const session = await getSingle(
-    supabase
-      .from("patient_sessions")
-      .select("session_token, cpf, expires_at, revoked_at")
-      .eq("session_token", sessionToken)
-      .is("revoked_at", null)
-      .gt("expires_at", now),
-    "Sessão inválida ou expirada"
-  );
-
   const assessment = await getSingle(
     supabase
       .from("candidate_assessments")
-      .select("id, candidate_id, assessment_model_id, access_token, status, released_at, started_at, completed_at, created_at")
+      .select("id, candidate_id, assessment_model_id, access_token, status, responses, released_at, submitted_at, completed_at, created_at")
       .eq("access_token", accessToken),
     "Avaliação não encontrada"
   );
@@ -240,15 +234,17 @@ async function fetchAssessmentData(accessToken, sessionToken){
   const candidate = await getSingle(
     supabase
       .from("candidates")
-      .select("id, full_name, cpf, primary_document_number, birth_date, email, phone, cell_phone, profession, city, state")
+      .select("id, full_name, cpf, primary_document_number, birth_date, email, phone, cell_phone, profession, city, state, patient_session_token_hash, patient_session_expires_at")
       .eq("id", assessment.candidate_id),
     "Paciente não encontrado"
   );
 
-  const sessionCpf = onlyNumbers(session.cpf);
-  const candidateCpf = onlyNumbers(candidate.cpf || candidate.primary_document_number);
+  const sessionHash = sha256(sessionToken);
+  const sessionExpiresAt = candidate.patient_session_expires_at
+    ? new Date(candidate.patient_session_expires_at).toISOString()
+    : null;
 
-  if(candidateCpf && sessionCpf && candidateCpf !== sessionCpf){
+  if(!sessionToken || candidate.patient_session_token_hash !== sessionHash || !sessionExpiresAt || sessionExpiresAt <= now){
     throw Object.assign(new Error("Sessão não pertence a este paciente."), { statusCode: 403 });
   }
 
@@ -260,14 +256,11 @@ async function fetchAssessmentData(accessToken, sessionToken){
     "Modelo de avaliação não encontrado"
   );
 
-  const submittedAnswers = await getMaybeSingle(
-    supabase
-      .from("patient_assessment_answers")
-      .select("candidate_assessment_id, answers, submitted_at")
-      .eq("candidate_assessment_id", assessment.id)
-  );
+  const submittedAnswers = Array.isArray(assessment.responses)
+    ? assessment.responses
+    : [];
 
-  if(!submittedAnswers?.answers?.length){
+  if(!submittedAnswers.length){
     throw new Error("As respostas ainda não foram encontradas no banco de dados.");
   }
 
@@ -287,14 +280,17 @@ async function fetchAssessmentData(accessToken, sessionToken){
     tipo: q.question_type,
     peso_risco: q.risk_weight || 0,
     alerta_critico: Boolean(q.critical_alert),
-    resposta: getAnswerValue(submittedAnswers.answers, q.id)
+    resposta: getAnswerValue(submittedAnswers, q.id)
   }));
+
+  delete candidate.patient_session_token_hash;
+  delete candidate.patient_session_expires_at;
 
   return {
     assessment,
     candidate,
     model,
-    submittedAt: submittedAnswers.submitted_at,
+    submittedAt: assessment.submitted_at || assessment.completed_at,
     respostasOrganizadas
   };
 }
@@ -693,7 +689,8 @@ async function salvarRegistroRelatorio(candidateAssessmentId, reportText, status
       report_text: reportText,
       email_to: EMAIL_TO,
       status,
-      error_message: errorMessage
+      error_message: errorMessage,
+      updated_at: new Date().toISOString()
     }, { onConflict: "candidate_assessment_id" });
 
   if(error){
